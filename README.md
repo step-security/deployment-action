@@ -80,7 +80,7 @@ jobs:
 
 ## Notes
 
-Heads up! Currently, there is a GitHub Actions limitation where events fired _inside_ an action will not trigger further workflows. If you use this action in your workflow, it will **not trigger** any "Deployment" workflows. Thanks to @rclayton-the-terrible for finding a workaround for this:
+Heads up! Currently, there is a GitHub Actions limitation where events fired _inside_ an action will not trigger further workflows. If you use this action in your workflow, it will **not trigger** any "Deployment" workflows.
 
 > While not ideal, if you use a token that is not the Action's GITHUB_TOKEN, this will work. We define a secret called GITHUB_DEPLOY_TOKEN and use that for API calls.
 
