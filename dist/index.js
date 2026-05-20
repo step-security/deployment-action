@@ -29,120 +29,127 @@ var __importStar = (this && this.__importStar) || function (mod) {
     __setModuleDefault(result, mod);
     return result;
 };
-var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
-    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
-    return new (P || (P = Promise))(function (resolve, reject) {
-        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
-        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
-        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
-        step((generator = generator.apply(thisArg, _arguments || [])).next());
-    });
-};
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 const core = __importStar(__nccwpck_require__(2186));
 const github = __importStar(__nccwpck_require__(5438));
 const axios_1 = __importStar(__nccwpck_require__(8757));
-function validateSubscription() {
-    var _a;
-    return __awaiter(this, void 0, void 0, function* () {
-        const API_URL = `https://agent.api.stepsecurity.io/v1/github/${process.env.GITHUB_REPOSITORY}/actions/subscription`;
-        try {
-            yield axios_1.default.get(API_URL, { timeout: 3000 });
+const fs = __importStar(__nccwpck_require__(7147));
+async function validateSubscription() {
+    const eventPath = process.env.GITHUB_EVENT_PATH;
+    let repoPrivate;
+    if (eventPath && fs.existsSync(eventPath)) {
+        const eventData = JSON.parse(fs.readFileSync(eventPath, 'utf8'));
+        repoPrivate = eventData?.repository?.private;
+    }
+    const upstream = 'chrnorm/deployment-action';
+    const action = process.env.GITHUB_ACTION_REPOSITORY;
+    const docsUrl = 'https://docs.stepsecurity.io/actions/stepsecurity-maintained-actions';
+    core.info('');
+    core.info('[1;36mStepSecurity Maintained Action[0m');
+    core.info(`Secure drop-in replacement for ${upstream}`);
+    if (repoPrivate === false)
+        core.info('[32m✓ Free for public repositories[0m');
+    core.info(`[36mLearn more:[0m ${docsUrl}`);
+    core.info('');
+    if (repoPrivate === false)
+        return;
+    const serverUrl = process.env.GITHUB_SERVER_URL || 'https://github.com';
+    const body = { action: action || '' };
+    if (serverUrl !== 'https://github.com')
+        body.ghes_server = serverUrl;
+    try {
+        await axios_1.default.post(`https://agent.api.stepsecurity.io/v1/github/${process.env.GITHUB_REPOSITORY}/actions/maintained-actions-subscription`, body, { timeout: 3000 });
+    }
+    catch (error) {
+        if ((0, axios_1.isAxiosError)(error) && error.response?.status === 403) {
+            core.error(`[1;31mThis action requires a StepSecurity subscription for private repositories.[0m`);
+            core.error(`[31mLearn how to enable a subscription: ${docsUrl}[0m`);
+            process.exit(1);
         }
-        catch (error) {
-            if ((0, axios_1.isAxiosError)(error) && ((_a = error.response) === null || _a === void 0 ? void 0 : _a.status) === 403) {
-                core.error('Subscription is not valid. Reach out to support@stepsecurity.io');
-                process.exit(1);
-            }
-            else {
-                core.info('Timeout or API not reachable. Continuing to next step.');
-            }
-        }
-    });
+        core.info('Timeout or API not reachable. Continuing to next step.');
+    }
 }
-function run() {
-    return __awaiter(this, void 0, void 0, function* () {
-        try {
-            yield validateSubscription();
-            const context = github.context;
-            const defaultLogUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/commit/${context.sha}/checks`;
-            const baseUrl = core.getInput('github-base-url', { required: false }) || undefined;
-            const token = core.getInput('token', { required: true });
-            const octokit = github.getOctokit(token, { baseUrl });
-            const owner = core.getInput('owner', { required: false }) || context.repo.owner;
-            const repo = core.getInput('repo', { required: false }) || context.repo.repo;
-            const headRef = process.env.GITHUB_HEAD_REF;
-            const ref = core.getInput('ref', { required: false }) || headRef || context.ref;
-            const sha = core.getInput('sha', { required: false }) || context.sha;
-            const logUrl = core.getInput('log-url', { required: false }) || defaultLogUrl;
-            const environmentUrl = core.getInput('environment-url', { required: false });
-            const task = core.getInput('task', {
-                required: false
-            });
-            const payload = core.getInput('payload', {
-                required: false
-            });
-            const autoInactiveStringInput = core.getInput('auto_inactive', {
-                required: false
-            });
-            const autoInactive = autoInactiveStringInput === 'true';
-            const transientEnvironment = core.getInput('transient-environment', {
-                required: false
-            });
-            const productionEnvironmentStringInput = core.getInput('production-environment', {
-                required: false
-            }) || undefined;
-            const productionEnvironment = productionEnvironmentStringInput
-                ? productionEnvironmentStringInput === 'true'
-                : undefined;
-            const environment = core.getInput('environment', { required: false }) || 'production';
-            const description = core.getInput('description', { required: false });
-            const initialStatus = core.getInput('initial-status', {
-                required: false
-            }) || 'pending';
-            const autoMerge = core.getInput('auto-merge', {
-                required: false
-            });
-            const requiredContexts = core.getInput('required-contexts', {
-                required: false
-            });
-            const deployment = yield octokit.rest.repos.createDeployment({
-                owner,
-                repo,
-                ref,
-                sha,
-                task: task !== '' ? task : undefined,
-                required_contexts: requiredContexts ? requiredContexts.split(',') : [],
-                environment,
-                transient_environment: transientEnvironment === 'true',
-                production_environment: productionEnvironment,
-                auto_merge: autoMerge === 'true',
-                payload: payload ? tryParseJSON(payload) : undefined,
-                description
-            });
-            if (!('id' in deployment.data)) {
-                // TODO: Should 202 be handled differently? Either way we get no ID
-                throw new Error(deployment.data.message);
-            }
-            yield octokit.rest.repos.createDeploymentStatus({
-                owner,
-                repo,
-                deployment_id: deployment.data.id,
-                description,
-                state: initialStatus,
-                log_url: logUrl,
-                environment_url: environmentUrl,
-                auto_inactive: autoInactive
-            });
-            core.setOutput('deployment_id', deployment.data.id.toString());
-            core.setOutput('deployment_url', deployment.data.url);
-            core.setOutput('environment_url', environmentUrl);
+async function run() {
+    try {
+        await validateSubscription();
+        const context = github.context;
+        const defaultLogUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/commit/${context.sha}/checks`;
+        const baseUrl = core.getInput('github-base-url', { required: false }) || undefined;
+        const token = core.getInput('token', { required: true });
+        const octokit = github.getOctokit(token, { baseUrl });
+        const owner = core.getInput('owner', { required: false }) || context.repo.owner;
+        const repo = core.getInput('repo', { required: false }) || context.repo.repo;
+        const headRef = process.env.GITHUB_HEAD_REF;
+        const ref = core.getInput('ref', { required: false }) || headRef || context.ref;
+        const sha = core.getInput('sha', { required: false }) || context.sha;
+        const logUrl = core.getInput('log-url', { required: false }) || defaultLogUrl;
+        const environmentUrl = core.getInput('environment-url', { required: false });
+        const task = core.getInput('task', {
+            required: false
+        });
+        const payload = core.getInput('payload', {
+            required: false
+        });
+        const autoInactiveStringInput = core.getInput('auto_inactive', {
+            required: false
+        });
+        const autoInactive = autoInactiveStringInput === 'true';
+        const transientEnvironment = core.getInput('transient-environment', {
+            required: false
+        });
+        const productionEnvironmentStringInput = core.getInput('production-environment', {
+            required: false
+        }) || undefined;
+        const productionEnvironment = productionEnvironmentStringInput
+            ? productionEnvironmentStringInput === 'true'
+            : undefined;
+        const environment = core.getInput('environment', { required: false }) || 'production';
+        const description = core.getInput('description', { required: false });
+        const initialStatus = core.getInput('initial-status', {
+            required: false
+        }) || 'pending';
+        const autoMerge = core.getInput('auto-merge', {
+            required: false
+        });
+        const requiredContexts = core.getInput('required-contexts', {
+            required: false
+        });
+        const deployment = await octokit.rest.repos.createDeployment({
+            owner,
+            repo,
+            ref,
+            sha,
+            task: task !== '' ? task : undefined,
+            required_contexts: requiredContexts ? requiredContexts.split(',') : [],
+            environment,
+            transient_environment: transientEnvironment === 'true',
+            production_environment: productionEnvironment,
+            auto_merge: autoMerge === 'true',
+            payload: payload ? tryParseJSON(payload) : undefined,
+            description
+        });
+        if (!('id' in deployment.data)) {
+            // TODO: Should 202 be handled differently? Either way we get no ID
+            throw new Error(deployment.data.message);
         }
-        catch (error) {
-            core.error(error);
-            core.setFailed(`Error creating GitHub deployment: ${error.message}`);
-        }
-    });
+        await octokit.rest.repos.createDeploymentStatus({
+            owner,
+            repo,
+            deployment_id: deployment.data.id,
+            description,
+            state: initialStatus,
+            log_url: logUrl,
+            environment_url: environmentUrl,
+            auto_inactive: autoInactive
+        });
+        core.setOutput('deployment_id', deployment.data.id.toString());
+        core.setOutput('deployment_url', deployment.data.url);
+        core.setOutput('environment_url', environmentUrl);
+    }
+    catch (error) {
+        core.error(error);
+        core.setFailed(`Error creating GitHub deployment: ${error.message}`);
+    }
 }
 /**
  * helper function to try and parse a provided input string as a JSON object.
